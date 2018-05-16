@@ -1,7 +1,7 @@
-Index: carry/carry.sml
+Index: compiler/Parse/carry/carry.sml
 ===================================================================
---- carry/carry.sml	(nonexistent)
-+++ carry/carry.sml	(working copy)
+--- compiler/Parse/carry/carry.sml	(nonexistent)
++++ compiler/Parse/carry/carry.sml	(working copy)
 @@ -0,0 +1,128 @@
 +signature CARRY =
 +sig
@@ -131,10 +131,10 @@ Index: carry/carry.sml
 +        end handle NotFound => (notFoundWarn userString; code)
 +      end handle _ => (badCarryWarn (); code)
 +end
-Index: carry/quickparse.sml
+Index: compiler/Parse/carry/quickparse.sml
 ===================================================================
---- carry/quickparse.sml	(nonexistent)
-+++ carry/quickparse.sml	(working copy)
+--- compiler/Parse/carry/quickparse.sml	(nonexistent)
++++ compiler/Parse/carry/quickparse.sml	(working copy)
 @@ -0,0 +1,54 @@
 +structure QuickParse =
 +struct
@@ -190,10 +190,10 @@ Index: carry/quickparse.sml
 +
 +end
 +end
-Index: main/parsercontrol.sml
+Index: compiler/Parse/main/parsercontrol.sml
 ===================================================================
---- main/parsercontrol.sml	(revision 4602)
-+++ main/parsercontrol.sml	(working copy)
+--- compiler/Parse/main/parsercontrol.sml	(revision 4602)
++++ compiler/Parse/main/parsercontrol.sml	(working copy)
 @@ -22,6 +22,9 @@
    (* set/clear Successor ML mode *)
      val setSuccML : bool -> unit
@@ -214,10 +214,10 @@ Index: main/parsercontrol.sml
      exception RESET_PARSER
  
    (* set/clear Successor ML mode *)
-Index: main/smlfile.sml
+Index: compiler/Parse/main/smlfile.sml
 ===================================================================
---- main/smlfile.sml	(revision 4602)
-+++ main/smlfile.sml	(working copy)
+--- compiler/Parse/main/smlfile.sml	(revision 4602)
++++ compiler/Parse/main/smlfile.sml	(working copy)
 @@ -22,6 +22,12 @@
  	  then SMLParser.parse source
  	  else MLParser.parse source
@@ -249,10 +249,10 @@ Index: main/smlfile.sml
  		| R.ABORT => fail "syntax error"
  		| R.ERROR => fail "syntax error"
  		| R.PARSE ast => loop(ast::asts)
-Index: parser.cm
+Index: compiler/Parse/parser.cm
 ===================================================================
---- parser.cm	(revision 4602)
-+++ parser.cm	(working copy)
+--- compiler/Parse/parser.cm	(revision 4602)
++++ compiler/Parse/parser.cm	(working copy)
 @@ -25,6 +25,9 @@
  	lex/tokentable.sml
  	lex/user.sml
