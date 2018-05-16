@@ -1,6 +1,6 @@
 # SML/NJ Autograding Patch
 
-This patch adds a setting (Control.carryDeclaration) which, when given a valid sml file with one variable declaration in it, will replace the last occurance (in a file or code typed into the repl) of a variable with the same name with that declaration. 
+This patch adds a setting, `Control.carryDeclaration` which stores the name of an sml file with a single variable (val, val rec, or fun) declaration. When code is loaded in to the repl, if it contains any variables with the same name, the last declaration of such a variable will be replaced with the code in `carryDeclaration`. 
 
 ## Example 
 
