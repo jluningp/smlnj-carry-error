@@ -1,0 +1,265 @@
+Index: carry/carry.sml
+===================================================================
+--- carry/carry.sml	(nonexistent)
++++ carry/carry.sml	(working copy)
+@@ -0,0 +1,128 @@
++signature CARRY =
++sig
++   val carry : Ast.dec -> Ast.dec -> Ast.dec
++end
++
++structure Carry : CARRY =
++struct
++  open Ast
++  open Symbol
++
++  exception NotFound
++
++  (* Functions to find symbol in ast *)
++  fun findpat p pat s k =
++      case pat of
++          VarPat (sym::_) =>  if p sym
++                              then s sym
++                              else k ()
++        | FlatAppPat ({item, ...}::_) => findpat p item s k
++        | MarkPat (pat', r) => findpat p pat' s k
++        | _ => k ()
++
++  fun findrvb p rvb s k =
++      case rvb of
++          MarkRvb (rvb', r) => findrvb p rvb' s k
++        | Rvb{var, ...} => if p var
++                           then s var
++                           else k ()
++
++  fun findvb p vb s k =
++      case vb of
++          MarkVb (vb', r) => findvb p vb' s k
++        | Vb{pat, ...} => findpat p pat s k
++
++  fun findclause p cls s k =
++      let
++        val Clause {pats, ...} = cls
++      in
++        case pats of
++            {item, ...}::_ => findpat p item s k
++          | _ => k ()
++      end
++
++
++  fun findfun p fb s k =
++      case fb of
++          MarkFb (fb', r) => findfun p fb' s k
++        | Fb (cls::_, b) => findclause p cls s k
++
++  (* Returns symbol in dec/decs *)
++  fun finddecs p decs s k =
++      case decs of
++          [] => k ()
++        | d::ds => finddec p d s (fn () => finddecs p ds s k)
++
++  and finddec p dec s k =
++      case dec of
++          SeqDec decs => finddecs p (rev decs) s k
++        | MarkDec (d, r) => finddec p d s k
++        | ValDec ([vb], ty) => findvb p vb s k
++        | ValrecDec ([rvb], ty) => findrvb p rvb s k
++        | FunDec ([fb], tys) => findfun p fb s k
++        | _ => k ()
++
++
++  (* Functions to substitute carry declaration *)
++  fun decssubst p newdec decs =
++      case decs of
++          [] => ([], 0)
++        | d::ds => (let
++                     val (new, n) = decsubst p newdec d
++                     val (rest, ns) = decssubst p newdec ds
++                   in
++                     if n > 0
++                     then (new::ds, n + ns)
++                     else (new::rest, ns)
++                   end)
++
++  and decsubst p newdec dec =
++      case dec of
++          SeqDec decs => (let
++                           val (ds, n) = decssubst p newdec (rev decs)
++                         in
++                           (SeqDec (rev ds), n)
++                         end)
++        | MarkDec (d, r) => (let
++                              val (new, n) = decsubst p newdec d
++                            in
++                              (MarkDec (new, r), n)
++                            end)
++        | ValDec ([vb], ty) => findvb p vb (fn _ => (newdec, 1)) (fn _ => (dec, 0))
++        | ValrecDec ([rvb], ty) => findrvb p rvb (fn _ => (newdec, 1)) (fn _ => (dec, 0))
++        | FunDec ([fb], tys) => findfun p fb (fn _ => (newdec, 1)) (fn _ => (dec, 0))
++        | _ => (dec, 0)
++
++
++  and showDetailsMessage n userString =
++      print ("There " ^
++             (if n = 1 then "was " else "were ") ^
++             (Int.toString n) ^
++             " occurrances of " ^
++             userString ^
++             "\n" ^
++             (if n > 0 then "One was replaced." else "Zero were replaced.") ^
++             "\n")
++
++  and notFoundWarn userString =
++      print("Warning: No occurrances of carry declaration " ^ userString ^ " found.\n")
++
++  and badCarryWarn () =
++      print ("Warning: No valid declarations in carry file.\n")
++
++  fun carry code replacement =
++      let
++        val sym = finddec (fn _ => true) replacement
++                          (fn x => x)
++                          (fn () => raise NotFound)
++        val name = Symbol.symbolToString sym
++        val userString = Substring.string (Substring.extract (name, 4, NONE))
++      in
++        let
++          val (newcode, n) = decsubst (fn s => Symbol.compare (s, sym) = EQUAL)
++                                      replacement code
++        in
++          (showDetailsMessage n userString; newcode)
++        end handle NotFound => (notFoundWarn userString; code)
++      end handle _ => (badCarryWarn (); code)
++end
+Index: carry/quickparse.sml
+===================================================================
+--- carry/quickparse.sml	(nonexistent)
++++ carry/quickparse.sml	(working copy)
+@@ -0,0 +1,54 @@
++structure QuickParse =
++struct
++local
++
++  structure R = ParseResult
++
++  val parsePhase = Stats.makePhase "Compiler 010 parse"
++
++  fun fail s = raise (CompileExn.Compile s)
++
++  fun parser source = if !ParserControl.succML
++                      then SMLParser.parse source
++                      else MLParser.parse source
++
++  fun parse source = let
++    val parser = parser source
++    val parser = Stats.doPhase parsePhase parser (* for correct timing *)
++    fun loop asts = (
++      case parser ()
++       of R.EOF => Ast.SeqDec(rev asts)
++       |  R.ABORT => fail "syntax error"
++       |  R.ERROR => fail "syntax error"
++       |  R.PARSE ast => loop(ast::asts)
++    (* end case *))
++  in
++    loop []
++  end
++
++  fun isTermIn f = let
++    val (rd, buf) = TextIO.StreamIO.getReader(TextIO.getInstream f)
++    val isTTY = (case rd
++                  of TextPrimIO.RD{ioDesc = SOME iod, ...} => (OS.IO.kind iod = OS.IO.Kind.tty)
++                  |  _ => false
++                (* end case *))
++  in
++    (* since getting the reader will have terminated the stream, we need
++     * to build a new stream.
++     *)
++    TextIO.setInstream(f, TextIO.StreamIO.mkInstream(rd, buf));
++    isTTY
++  end
++in
++fun parse_ast fname =
++    let
++      val stream = TextIO.openIn fname
++                   handle e as IO.Io _ => raise ErrorMsg.Error
++      val interactive = isTermIn stream
++      val source = Source.newSource (fname, stream, interactive, ErrorMsg.defaultConsumer ())
++    in
++      parse source
++    end
++
++end
++end
+Index: main/parsercontrol.sml
+===================================================================
+--- main/parsercontrol.sml	(revision 4602)
++++ main/parsercontrol.sml	(working copy)
+@@ -22,6 +22,9 @@
+   (* set/clear Successor ML mode *)
+     val setSuccML : bool -> unit
+ 
++  (* add carry declaration (put "" to remove) *)
++    val carryDeclaration : string ref
++
+   end
+ 
+ structure ParserControl : sig
+@@ -91,6 +94,9 @@
+     val succML =
+ 	  new (flag_cvt, "succ-ml", "whether Successor-ML extensions are recognized", false)
+ 
++    val carryDeclaration =
++        new (string_cvt, "carry-decl", "carry declaration", "")
++
+     exception RESET_PARSER
+ 
+   (* set/clear Successor ML mode *)
+Index: main/smlfile.sml
+===================================================================
+--- main/smlfile.sml	(revision 4602)
++++ main/smlfile.sml	(working copy)
+@@ -22,6 +22,12 @@
+ 	  then SMLParser.parse source
+ 	  else MLParser.parse source
+ 
++    fun carry ast =
++        case !ParserControl.carryDeclaration of
++            "" => ast
++          | filename => Carry.carry ast (QuickParse.parse_ast filename)
++                        handle _ => (print "Warning: Control.carryDeclartion file invalid.\n"; ast)
++
+     fun parseOne source = let
+ 	val parser = parser source
+ 	val parser = Stats.doPhase parsePhase parser (* for correct timing *)
+@@ -30,7 +36,7 @@
+ 	       of R.EOF => NONE
+ 		| R.ABORT => fail "syntax error"
+ 		| R.ERROR => fail "syntax error"
+-		| R.PARSE ast => SOME ast
++		| R.PARSE ast => SOME (carry ast)
+ 	      (* end case *))
+ 	in
+ 	  doit
+@@ -41,7 +47,7 @@
+ 	val parser = Stats.doPhase parsePhase parser (* for correct timing *)
+ 	fun loop asts = (
+ 	      case parser ()
+-	       of R.EOF => Ast.SeqDec(rev asts)
++	       of R.EOF => carry (Ast.SeqDec(rev asts))
+ 		| R.ABORT => fail "syntax error"
+ 		| R.ERROR => fail "syntax error"
+ 		| R.PARSE ast => loop(ast::asts)
+Index: parser.cm
+===================================================================
+--- parser.cm	(revision 4602)
++++ parser.cm	(working copy)
+@@ -25,6 +25,9 @@
+ 	lex/tokentable.sml
+ 	lex/user.sml
+ 
++	carry/quickparse.sml
++	carry/carry.sml
++
+ #if defined (NO_PLUGINS)
+         lex/ml.lex.sml
+         lex/sml.lex.sml
